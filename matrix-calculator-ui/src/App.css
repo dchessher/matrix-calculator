@@ -116,12 +116,100 @@
   box-shadow: 0 0 0 2px rgba(103, 67, 255, 0.35);
 }
 
+.tensor-rank-controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.rank-button {
+  border: 1px solid rgba(158, 120, 255, 0.25);
+  border-radius: 999px;
+  background: rgba(19, 6, 38, 0.9);
+  color: rgba(223, 210, 255, 0.85);
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.2s ease, border 0.2s ease, transform 0.2s ease;
+}
+
+.rank-button:hover {
+  border-color: rgba(203, 164, 255, 0.45);
+  transform: translateY(-1px);
+}
+
+.rank-button.active {
+  background: rgba(103, 67, 255, 0.35);
+  border-color: rgba(203, 164, 255, 0.55);
+  color: #f4efff;
+}
+
 .matrix-grid {
   display: grid;
   gap: 0.65rem;
 }
 
+.vector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(3.5rem, 1fr));
+  gap: 0.65rem;
+}
+
+.tensor-slices-editor {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.tensor-slices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.2rem;
+}
+
+.tensor-slice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: rgba(24, 10, 45, 0.65);
+  border: 1px solid rgba(130, 90, 220, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.tensor-slices-editor .tensor-slice-card {
+  background: rgba(24, 10, 45, 0.55);
+}
+
+.tensor-slice-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(223, 210, 255, 0.75);
+}
+
+.vector-display {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(3.5rem, 1fr));
+  gap: 0.65rem;
+}
+
+.vector-display.visualization-vector {
+  grid-template-columns: repeat(auto-fit, minmax(2.8rem, 1fr));
+  gap: 0.5rem;
+}
+
+.tensor-slices.visualization-tensor {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
 .matrix-grid input,
+.vector-grid input,
 .result-cell {
   border-radius: 12px;
   padding: 0.55rem 0.65rem;
@@ -134,7 +222,8 @@
   transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-.matrix-grid input:focus {
+.matrix-grid input:focus,
+.vector-grid input:focus {
   outline: none;
   border-color: rgba(203, 164, 255, 0.65);
   box-shadow: 0 0 0 2px rgba(103, 67, 255, 0.35);
@@ -142,12 +231,15 @@
 }
 
 .matrix-grid input::-webkit-outer-spin-button,
-.matrix-grid input::-webkit-inner-spin-button {
+.matrix-grid input::-webkit-inner-spin-button,
+.vector-grid input::-webkit-outer-spin-button,
+.vector-grid input::-webkit-inner-spin-button {
   margin: 0;
   -webkit-appearance: none;
 }
 
-.matrix-grid input[type='number'] {
+.matrix-grid input[type='number'],
+.vector-grid input[type='number'] {
   -moz-appearance: textfield;
 }
 
@@ -417,13 +509,13 @@
   line-height: 1.55;
 }
 
-.visualization-matrices {
+.visualization-entities {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1rem;
 }
 
-.visualization-matrix {
+.visualization-entity {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
