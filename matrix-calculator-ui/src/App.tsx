@@ -889,6 +889,121 @@ type TensorEditorProps = {
 function TensorEditor({ name, state, onRankChange, onShapeChange, onCellChange }: TensorEditorProps) {
   const dimensionLabels = DIMENSION_LABELS.find((entry) => entry.rank === state.rank) ?? DIMENSION_LABELS[0]
 
+    steps.push({
+      title: `Eliminate column ${col + 1}`,
+      description: `Zero out entries below the pivot in column ${col + 1}.`,
+      matrices: [{ label: 'Upper-triangular form', data: cloneMatrix(working) }],
+    })
+  }
+
+  const value = det * sign
+  steps.push({
+    title: 'Multiply diagonal entries',
+    description: 'Multiply the diagonal entries and apply the accumulated sign to get det(A).',
+    scalar: { label: 'determinant', value },
+  })
+
+  return { value, steps }
+}
+
+function calculateInverseWithSteps(matrix: NumericMatrix): {
+  value: NumericMatrix
+  steps: VisualizationStep[]
+} {
+  const n = matrix.length
+  if (n === 0 || matrix.some((row) => row.length !== n)) {
+    throw new Error('Inverse is only defined for non-empty square matrices.')
+  }
+
+  const augmented = matrix.map((row, i) => [
+    ...row,
+    ...Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)),
+  ])
+
+  const steps: VisualizationStep[] = [
+    {
+      title: 'Augment with identity',
+      description: 'Start Gauss-Jordan elimination on the augmented matrix [A | I].',
+      matrices: [{ label: '[A | I]', data: cloneMatrix(augmented) }],
+    },
+  ]
+
+  for (let col = 0; col < n; col += 1) {
+    let pivot = col
+    for (let row = col; row < n; row += 1) {
+      if (Math.abs(augmented[row][col]) > Math.abs(augmented[pivot][col])) {
+        pivot = row
+      }
+    }
+
+    const pivotValue = augmented[pivot][col]
+    if (Math.abs(pivotValue) < 1e-10) {
+      throw new Error('Matrix is singular and cannot be inverted.')
+    }
+
+    if (pivot !== col) {
+      ;[augmented[pivot], augmented[col]] = [augmented[col], augmented[pivot]]
+      steps.push({
+        title: `Swap rows ${col + 1} and ${pivot + 1}`,
+        description: 'Bring a strong pivot into position to maintain numerical stability.',
+        matrices: [{ label: 'After row swap', data: cloneMatrix(augmented) }],
+      })
+    }
+
+    const currentPivot = augmented[col][col]
+    if (Math.abs(currentPivot - 1) > 1e-10) {
+      for (let j = 0; j < 2 * n; j += 1) {
+        augmented[col][j] /= currentPivot
+      }
+      steps.push({
+        title: `Normalize row ${col + 1}`,
+        description: 'Scale the pivot row so the pivot becomes 1.',
+        matrices: [{ label: 'Normalized pivot row', data: cloneMatrix(augmented) }],
+      })
+    }
+
+    for (let row = 0; row < n; row += 1) {
+      if (row === col) continue
+      const factor = augmented[row][col]
+      if (Math.abs(factor) < 1e-10) continue
+      for (let j = 0; j < 2 * n; j += 1) {
+        augmented[row][j] -= factor * augmented[col][j]
+      }
+      steps.push({
+        title: `Eliminate column ${col + 1} for row ${row + 1}`,
+        description: `Clear the entry in row ${row + 1}, column ${col + 1}.`,
+        matrices: [{ label: 'Column cleared', data: cloneMatrix(augmented) }],
+      })
+    }
+  }
+
+  const inverseMatrix = augmented.map((row) => row.slice(n))
+  steps.push({
+    title: 'Extract inverse matrix',
+    description: 'The right half of the augmented matrix now contains A⁻¹.',
+    matrices: [{ label: 'A⁻¹', data: cloneMatrix(inverseMatrix) }],
+  })
+
+  return { value: inverseMatrix, steps }
+}
+
+function formatNumber(value: number): string {
+  if (Math.abs(value) < 1e-10) return '0'
+  const rounded = Number(value.toFixed(6))
+  return Math.abs(rounded) < 1e-10 ? '0' : rounded.toString()
+}
+
+type MatrixEditorProps = {
+  name: 'A' | 'B'
+  rows: number
+  cols: number
+  data: MatrixInput
+  onRowsChange: (rows: number) => void
+  onColsChange: (cols: number) => void
+  onCellChange: (row: number, col: number, value: string) => void
+}
+
+function MatrixEditor({ name, rows, cols, data, onRowsChange, onColsChange, onCellChange }: MatrixEditorProps) {
   return (
     <div className="matrix-card">
       <div className="matrix-header">
