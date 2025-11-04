@@ -902,6 +902,399 @@ function TensorInputEditor({
 }: TensorInputEditorProps) {
   const dimensionLabels = DIMENSION_LABELS.find((entry) => entry.rank === state.rank) ?? DIMENSION_LABELS[0]
 
+  return [
+    {
+      title: 'Confirm shape compatibility',
+      description: `Tensor A and Tensor B both have shape ${shapeText}.`,
+      entities: [createVisualizationEntity('Tensor A', a), createVisualizationEntity('Tensor B', b)],
+    },
+    {
+      title: 'Operate element-wise',
+      description: `Example at index ${path}: ${formatNumber(aSample)} ${operation} ${formatNumber(
+        bSample,
+      )} = ${formatNumber(rSample)}.`,
+    },
+    {
+      title: 'Resulting tensor',
+      entities: [createVisualizationEntity('Result', result)],
+    },
+  ]
+}
+const OPERATION_CONFIG: OperationConfig[] = [
+  {
+    value: 'add',
+    label: 'A + B',
+    description: 'Element-wise addition for tensors sharing the same shape.',
+    guard: (a, b) => tensorsShareShape(a, b),
+    compute: (a, b) => {
+      const tensor = addTensors(a, b)
+      const steps = tensorAdditionSteps(a, b, tensor, '+')
+      return { result: resultFromTensor('A + B', tensor), steps }
+    },
+  },
+  {
+    value: 'subtract',
+    label: 'A - B',
+    description: 'Element-wise subtraction of Tensor B from Tensor A.',
+    guard: (a, b) => tensorsShareShape(a, b),
+    compute: (a, b) => {
+      const tensor = subtractTensors(a, b)
+      const steps = tensorAdditionSteps(a, b, tensor, '-')
+      return { result: resultFromTensor('A - B', tensor), steps }
+    },
+  },
+  {
+    value: 'hadamard',
+    label: 'A ⊙ B (Hadamard)',
+    description: 'Element-wise multiplication, useful for gating and feature scaling.',
+    guard: (a, b) => tensorsShareShape(a, b),
+    compute: (a, b) => {
+      const tensor = hadamardTensors(a, b)
+      const steps = tensorAdditionSteps(a, b, tensor, '⊙')
+      return { result: resultFromTensor('A ⊙ B', tensor), steps }
+    },
+  },
+  {
+    value: 'multiply',
+    label: 'A × B',
+    description: 'Matrix multiplication across the inner dimension.',
+    guard: (a, b) => a.rank === 2 && b.rank === 2 && a.shape[1] === b.shape[0],
+    compute: (a, b) => {
+      const matrixA = a as NumericMatrixState
+      const matrixB = b as NumericMatrixState
+      const product = multiplyMatrices(matrixA.data, matrixB.data)
+      const steps: VisualizationStep[] = [
+        {
+          title: 'Check inner dimensions',
+          description: `A is ${formatShape(matrixA.shape)} and B is ${formatShape(matrixB.shape)} so ${matrixA.shape[1]} = ${matrixB.shape[0]}.`,
+        },
+        {
+          title: 'Multiply rows by columns',
+          description: 'Each entry cᵢⱼ is the dot product of row i of A with column j of B.',
+          entities: [
+            createVisualizationEntity('Matrix A', matrixA),
+            createVisualizationEntity('Matrix B', matrixB),
+          ],
+        },
+        {
+          title: 'Resulting matrix',
+          entities: [{ type: 'matrix', label: 'A × B', data: product }],
+        },
+      ]
+      return { result: { type: 'matrix', label: 'A × B', data: product }, steps }
+    },
+  },
+  {
+    value: 'detA',
+    label: 'det(A)',
+    description: 'Determinant of tensor A when it is a square matrix.',
+    guard: (a) => a.rank === 2 && a.shape[0] === a.shape[1],
+    compute: (a) => {
+      const matrixA = a as NumericMatrixState
+      const { value, steps } = calculateDeterminantWithSteps(matrixA.data)
+      return { result: { type: 'scalar', label: 'det(A)', value }, steps }
+    },
+  },
+  {
+    value: 'detB',
+    label: 'det(B)',
+    description: 'Determinant of tensor B when it is a square matrix.',
+    guard: (_, b) => b.rank === 2 && b.shape[0] === b.shape[1],
+    compute: (_, b) => {
+      const matrixB = b as NumericMatrixState
+      const { value, steps } = calculateDeterminantWithSteps(matrixB.data)
+      return { result: { type: 'scalar', label: 'det(B)', value }, steps }
+    },
+  },
+  {
+    value: 'invA',
+    label: 'A⁻¹',
+    description: 'Inverse of tensor A when it is a square, non-singular matrix.',
+    guard: (a) => a.rank === 2 && a.shape[0] === a.shape[1],
+    compute: (a) => {
+      const matrixA = a as NumericMatrixState
+      const { value, steps } = calculateInverseWithSteps(matrixA.data)
+      return { result: { type: 'matrix', label: 'A⁻¹', data: value }, steps }
+    },
+  },
+  {
+    value: 'invB',
+    label: 'B⁻¹',
+    description: 'Inverse of tensor B when it is a square, non-singular matrix.',
+    guard: (_, b) => b.rank === 2 && b.shape[0] === b.shape[1],
+    compute: (_, b) => {
+      const matrixB = b as NumericMatrixState
+      const { value, steps } = calculateInverseWithSteps(matrixB.data)
+      return { result: { type: 'matrix', label: 'B⁻¹', data: value }, steps }
+    },
+  },
+  {
+    value: 'transA',
+    label: 'Aᵀ',
+    description: 'Transpose tensor A when it is a matrix.',
+    guard: (a) => a.rank === 2,
+    compute: (a) => {
+      const matrixA = a as NumericMatrixState
+      const rows = matrixA.data.length
+      const cols = matrixA.data[0]?.length ?? 0
+      const transpose = Array.from({ length: cols }, (_, col) =>
+        Array.from({ length: rows }, (_, row) => matrixA.data[row][col]),
+      )
+      const steps: VisualizationStep[] = [
+        {
+          title: 'Swap rows and columns',
+          description: 'The (i, j) entry becomes (j, i) in the transpose.',
+          entities: [
+            createVisualizationEntity('Matrix A', matrixA),
+            { type: 'matrix', label: 'Aᵀ', data: transpose },
+          ],
+        },
+      ]
+      return { result: { type: 'matrix', label: 'Aᵀ', data: transpose }, steps }
+    },
+  },
+  {
+    value: 'transB',
+    label: 'Bᵀ',
+    description: 'Transpose tensor B when it is a matrix.',
+    guard: (_, b) => b.rank === 2,
+    compute: (_, b) => {
+      const matrixB = b as NumericMatrixState
+      const rows = matrixB.data.length
+      const cols = matrixB.data[0]?.length ?? 0
+      const transpose = Array.from({ length: cols }, (_, col) =>
+        Array.from({ length: rows }, (_, row) => matrixB.data[row][col]),
+      )
+      const steps: VisualizationStep[] = [
+        {
+          title: 'Swap rows and columns',
+          description: 'The (i, j) entry becomes (j, i) in the transpose.',
+          entities: [
+            createVisualizationEntity('Matrix B', matrixB),
+            { type: 'matrix', label: 'Bᵀ', data: transpose },
+          ],
+        },
+      ]
+      return { result: { type: 'matrix', label: 'Bᵀ', data: transpose }, steps }
+    },
+  },
+  {
+    value: 'dot',
+    label: '⟨A, B⟩ (Dot)',
+    description: 'Dot product between vectors A and B.',
+    guard: (a, b) => a.rank === 1 && b.rank === 1 && a.shape[0] === b.shape[0],
+    compute: (a, b) => {
+      const { value, steps } = dotProduct(a as NumericVectorState, b as NumericVectorState)
+      return { result: { type: 'scalar', label: '⟨A, B⟩', value }, steps }
+    },
+  },
+  {
+    value: 'outer',
+    label: 'A ⊗ B (Outer)',
+    description: 'Outer product between vectors A and B forming a rank-1 matrix.',
+    guard: (a, b) => a.rank === 1 && b.rank === 1,
+    compute: (a, b) => {
+      const { data, steps } = outerProduct(a as NumericVectorState, b as NumericVectorState)
+      return { result: { type: 'matrix', label: 'A ⊗ B', data }, steps }
+    },
+  },
+  {
+    value: 'tensorVector',
+    label: 'Tensor A × Vector B',
+    description: 'Contract Tensor A along its last axis with Vector B.',
+    guard: (a, b) => a.rank === 3 && b.rank === 1 && a.shape[2] === b.shape[0],
+    compute: (a, b) => {
+      const tensorA = a as NumericTensor3State
+      const vectorB = b as NumericVectorState
+      const contraction = tensorVectorContraction(tensorA, vectorB)
+      const steps: VisualizationStep[] = [
+        {
+          title: 'Match contraction axis',
+          description: `Tensor A shape ${formatShape(tensorA.shape)} contracts with vector length ${vectorB.shape[0]}.`,
+          entities: [
+            createVisualizationEntity('Tensor A', tensorA),
+            createVisualizationEntity('Vector B', vectorB),
+          ],
+        },
+        {
+          title: 'Compute slice dot products',
+          description: 'Each row across the last axis performs a dot product with Vector B.',
+        },
+        {
+          title: 'Resulting matrix',
+          entities: [{ type: 'matrix', label: 'Contraction result', data: contraction.data }],
+        },
+      ]
+      return { result: { type: 'matrix', label: 'Tensor A × Vector B', data: contraction.data }, steps }
+    },
+  },
+  {
+    value: 'tensorMatMulRight',
+    label: 'Tensor A × Matrix B',
+    description: 'Multiply each frontal slice of Tensor A by Matrix B on the right.',
+    guard: (a, b) => a.rank === 3 && b.rank === 2 && a.shape[2] === b.shape[0],
+    compute: (a, b) => {
+      const tensorA = a as NumericTensor3State
+      const matrixB = b as NumericMatrixState
+      const product = tensorMatrixRight(tensorA, matrixB)
+      const steps: VisualizationStep[] = [
+        {
+          title: 'Validate shared axis',
+          description: `Tensor A shape ${formatShape(tensorA.shape)} shares ${tensorA.shape[2]} with Matrix B shape ${formatShape(matrixB.shape)}.`,
+        },
+        {
+          title: 'Multiply per slice',
+          description: 'For each depth slice, perform standard matrix multiplication with B.',
+          entities: [
+            createVisualizationEntity('Tensor A', tensorA),
+            createVisualizationEntity('Matrix B', matrixB),
+          ],
+        },
+        {
+          title: 'Resulting tensor',
+          entities: [{ type: 'tensor3', label: 'Product tensor', data: product.data }],
+        },
+      ]
+      return { result: { type: 'tensor3', label: 'Tensor A × Matrix B', data: product.data }, steps }
+    },
+  },
+  {
+    value: 'tensorMatMulLeft',
+    label: 'Matrix A × Tensor B',
+    description: 'Multiply Matrix A with each frontal slice of Tensor B on the left.',
+    guard: (a, b) => a.rank === 2 && b.rank === 3 && a.shape[1] === b.shape[1],
+    compute: (a, b) => {
+      const matrixA = a as NumericMatrixState
+      const tensorB = b as NumericTensor3State
+      const product = matrixTensorLeft(matrixA, tensorB)
+      const steps: VisualizationStep[] = [
+        {
+          title: 'Validate shared axis',
+          description: `Matrix A shape ${formatShape(matrixA.shape)} shares ${matrixA.shape[1]} with Tensor B shape ${formatShape(tensorB.shape)}.`,
+        },
+        {
+          title: 'Multiply per slice',
+          description: 'For each tensor slice, multiply on the left by Matrix A.',
+          entities: [
+            createVisualizationEntity('Matrix A', matrixA),
+            createVisualizationEntity('Tensor B', tensorB),
+          ],
+        },
+        {
+          title: 'Resulting tensor',
+          entities: [{ type: 'tensor3', label: 'Product tensor', data: product.data }],
+        },
+      ]
+      return { result: { type: 'tensor3', label: 'Matrix A × Tensor B', data: product.data }, steps }
+    },
+  },
+];
+type DimensionLabelSet = {
+  rank: Rank
+  labels: string[]
+}
+
+const DIMENSION_LABELS: DimensionLabelSet[] = [
+  { rank: 1, labels: ['Length'] },
+  { rank: 2, labels: ['Rows', 'Cols'] },
+  { rank: 3, labels: ['Depth', 'Rows', 'Cols'] },
+]
+
+type TensorEditorProps = {
+  name: 'A' | 'B'
+  state: TensorInputState
+  onRankChange: (rank: Rank) => void
+  onShapeChange: (axis: number, value: number) => void
+  onCellChange: (indices: number[], value: string) => void
+}
+
+function TensorEditor({ name, state, onRankChange, onShapeChange, onCellChange }: TensorEditorProps) {
+  const dimensionLabels = DIMENSION_LABELS.find((entry) => entry.rank === state.rank) ?? DIMENSION_LABELS[0]
+
+  const steps: VisualizationStep[] = [
+    {
+      title: 'Augment with identity',
+      description: 'Start Gauss-Jordan elimination on the augmented matrix [A | I].',
+      matrices: [{ label: '[A | I]', data: cloneMatrix(augmented) }],
+    },
+  ]
+
+  for (let col = 0; col < n; col += 1) {
+    let pivot = col
+    for (let row = col; row < n; row += 1) {
+      if (Math.abs(augmented[row][col]) > Math.abs(augmented[pivot][col])) {
+        pivot = row
+      }
+    }
+
+    const pivotValue = augmented[pivot][col]
+    if (Math.abs(pivotValue) < 1e-10) {
+      throw new Error('Matrix is singular and cannot be inverted.')
+    }
+
+    if (pivot !== col) {
+      ;[augmented[pivot], augmented[col]] = [augmented[col], augmented[pivot]]
+      steps.push({
+        title: `Swap rows ${col + 1} and ${pivot + 1}`,
+        description: 'Bring a strong pivot into position to maintain numerical stability.',
+        matrices: [{ label: 'After row swap', data: cloneMatrix(augmented) }],
+      })
+    }
+
+    const currentPivot = augmented[col][col]
+    if (Math.abs(currentPivot - 1) > 1e-10) {
+      for (let j = 0; j < 2 * n; j += 1) {
+        augmented[col][j] /= currentPivot
+      }
+      steps.push({
+        title: `Normalize row ${col + 1}`,
+        description: 'Scale the pivot row so the pivot becomes 1.',
+        matrices: [{ label: 'Normalized pivot row', data: cloneMatrix(augmented) }],
+      })
+    }
+
+    for (let row = 0; row < n; row += 1) {
+      if (row === col) continue
+      const factor = augmented[row][col]
+      if (Math.abs(factor) < 1e-10) continue
+      for (let j = 0; j < 2 * n; j += 1) {
+        augmented[row][j] -= factor * augmented[col][j]
+      }
+      steps.push({
+        title: `Eliminate column ${col + 1} for row ${row + 1}`,
+        description: `Clear the entry in row ${row + 1}, column ${col + 1}.`,
+        matrices: [{ label: 'Column cleared', data: cloneMatrix(augmented) }],
+      })
+    }
+  }
+
+  const inverseMatrix = augmented.map((row) => row.slice(n))
+  steps.push({
+    title: 'Extract inverse matrix',
+    description: 'The right half of the augmented matrix now contains A⁻¹.',
+    matrices: [{ label: 'A⁻¹', data: cloneMatrix(inverseMatrix) }],
+  })
+
+  return { value: inverseMatrix, steps }
+}
+
+function formatNumber(value: number): string {
+  if (Math.abs(value) < 1e-10) return '0'
+  const rounded = Number(value.toFixed(6))
+  return Math.abs(rounded) < 1e-10 ? '0' : rounded.toString()
+}
+
+type MatrixEditorProps = {
+  name: 'A' | 'B'
+  rows: number
+  cols: number
+  data: MatrixInput
+  onRowsChange: (rows: number) => void
+  onColsChange: (cols: number) => void
+  onCellChange: (row: number, col: number, value: string) => void
+}
+
+function MatrixEditor({ name, rows, cols, data, onRowsChange, onColsChange, onCellChange }: MatrixEditorProps) {
   return (
     <div className="matrix-card">
       <div className="matrix-header">
